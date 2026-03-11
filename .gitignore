@@ -1,0 +1,4 @@
+.env
+trace.txt
+cookies.*
+rpi-auth.sh
