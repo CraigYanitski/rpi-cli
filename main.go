@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/http/httputil"
+	//"net/http/httputil"
 	"regexp"
 	"strings"
 	"time"
@@ -30,9 +30,11 @@ type Verify struct {
 }
 
 type apiConfig struct {
-	client     *http.Client
-	cookiejar  *cookiejar.Jar
-	webrtcAPI  *webrtc.API
+	client      *http.Client
+	cookiejar   *cookiejar.Jar
+	webrtcAPI   *webrtc.API
+	deviceInfo  *DeviceInfo
+	sdpChan     chan string
 }
 
 func main() {
@@ -74,9 +76,10 @@ func main() {
 
 	// initialise api config
 	api := apiConfig{
-		client: client,
+		client:    client,
 		cookiejar: jar,
 		webrtcAPI: webrtc.NewAPI(webrtc.WithSettingEngine(s)),
+		sdpChan:   make(chan string),
 	}
 
 	// ---- CONNECT TO SIGNALLING SERVER ----
@@ -121,29 +124,29 @@ type debugTransport struct {
 
 func (d *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
     // Get cookies from jar for this URL
-    if d.jar != nil {
-        cookies := d.jar.Cookies(req.URL)
-        if len(cookies) > 0 {
-            fmt.Printf("Cookies from jar for %s:\n", req.URL)
-            for _, c := range cookies {
-                fmt.Printf("  %s: %s\n", c.Name, c.Value)
-            }
-        }
-		fmt.Println("")
-    }
+    //if d.jar != nil {
+    //    cookies := d.jar.Cookies(req.URL)
+    //    if len(cookies) > 0 {
+    //        fmt.Printf("Cookies from jar for %s:\n", req.URL)
+    //        for _, c := range cookies {
+    //            fmt.Printf("  %s: %s\n", c.Name, c.Value)
+    //        }
+    //    }
+	//	fmt.Println("")
+    //}
     
     // Dump request BEFORE sending (cookies will be in Header)
-    dump, _ := httputil.DumpRequestOut(req, true)
-    fmt.Println("=== REQUEST WITH COOKIES ===")
-    fmt.Println(string(dump) + "\n")
+    //dump, _ := httputil.DumpRequestOut(req, true)
+    //fmt.Println("=== REQUEST WITH COOKIES ===")
+    //fmt.Println(string(dump) + "\n")
     
     // Send the request
     resp, err := d.transport.RoundTrip(req)
 
 	// Dump response AFTER sending
-	dump, _ = httputil.DumpResponse(resp, false)
-	fmt.Println("=== RESPONSE ===")
-	fmt.Println(string(dump) + "\n")
+	//dump, _ = httputil.DumpResponse(resp, false)
+	//fmt.Println("=== RESPONSE ===")
+	//fmt.Println(string(dump) + "\n")
     return resp, err
 }
 
@@ -170,7 +173,7 @@ func getAuth(text, filter string, verbose bool) string {
 			continue
 		}
 
-		fmt.Printf("found: %s\n", line)
+		//fmt.Printf("found: %s\n", line)
 
 		// use regexp pattern to extract authenticity token
 		matches := pattern.FindStringSubmatch(line)
