@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -18,12 +17,13 @@ import (
 	"github.com/fereidani/httpdecompressor"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	"github.com/pion/randutil"
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/term"
 )
 
 type DeviceInfo struct {
 	controller  string
+	csrfToken   string
 	sessionId   uuid.UUID
 	device      DeviceData
 	iceConfig   ICEConfig
@@ -76,6 +76,14 @@ func (ic ICEConfig) String() string {
 	return str.String()
 }
 
+type SDPResponse struct {
+	Id      string  `json:"id"`
+	Answer  *struct {
+		Type  string  `json:"type"`
+		Sdp   string  `json:"sdp"`
+	}  `json:"answer"`
+}
+
 func (cfg *apiConfig) rpiConnect() {
 	err := godotenv.Load()
 	if err != nil {
@@ -107,7 +115,7 @@ func (cfg *apiConfig) rpiConnect() {
 	}
 	resp.Body.Close()
 
-	authToken := getAuth(string(body), "Raspberry", true)
+	authToken := getAuth(string(body), "Raspberry", false)
 	authValues := url.Values{}
 	authValues.Set("authenticity_token", authToken)
 	authData :=  authValues.Encode()
@@ -163,14 +171,18 @@ func (cfg *apiConfig) rpiConnect() {
 	resp.Body.Close()
 	
 	// available devices should appear in this response
-	fmt.Printf("\n=== Final Response from %s ===\n\n%s\n", r.Header.Get("Host"), string(body))
+	// fmt.Printf("\n=== Final Response from %s ===\n\n%s\n", r.Header.Get("Host"), string(body))
+
+
+	// --- WEBRTC ---
+
 
 	// extract and decode device information
 	shellInfo := getSessionInformation(string(body))
 	deviceInfo := &DeviceInfo{}
-	fmt.Print("\n--- Device Information ---\n")
+	//fmt.Print("\n--- Device Information ---\n")
 	if shellInfo != nil {
-		s := html.UnescapeString(shellInfo[0])
+		// s := html.UnescapeString(shellInfo[0])
 		deviceInfo.controller = html.UnescapeString(shellInfo[1])
 		deviceInfo.sessionId, _ = uuid.Parse(html.UnescapeString(shellInfo[2]))
 		d := html.UnescapeString(shellInfo[3])
@@ -185,12 +197,24 @@ func (cfg *apiConfig) rpiConnect() {
 			log.Fatal(err)
 		}
 		deviceInfo.iceConfig = *iceConfig
-		fmt.Printf("  string: %s\n", s)
-		fmt.Printf("  controller: %s\n", deviceInfo.controller)
-		fmt.Printf("  session-id: %s\n", deviceInfo.sessionId)
-		fmt.Printf("  device: %s\n", deviceInfo.device)
-		fmt.Printf("  ice-config: %s\n", deviceInfo.iceConfig)
+		// fmt.Printf("  string: %s\n", s)
+		//fmt.Printf("  controller: %s\n", deviceInfo.controller)
+		//fmt.Printf("  session-id: %s\n", deviceInfo.sessionId)
+		//fmt.Printf("  device: %s\n", deviceInfo.device)
+		//fmt.Printf("  ice-config: %s\n", deviceInfo.iceConfig)
+	} else {
+		log.Fatal("Unable to collect device information")
 	}
+
+	sessionToken := getSessionToken(string(body))
+	if sessionToken != "" {
+		deviceInfo.csrfToken = sessionToken
+		//fmt.Printf("  csrf-token: %s\n", deviceInfo.csrfToken)
+	} else {
+		log.Fatal("Unable to collect CSRF token for session")
+	}
+
+	cfg.deviceInfo = deviceInfo
 
 	config := webrtc.Configuration{
 		ICEServers: deviceInfo.iceConfig.IceServers,
@@ -221,26 +245,27 @@ func (cfg *apiConfig) rpiConnect() {
 		}
 	})
 
+	// create data channel
+	dataChannel, err := peerConnection.CreateDataChannel("shell", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// register data channel
-	peerConnection.OnDataChannel(func(dataChannel *webrtc.DataChannel) {
-		fmt.Printf("New data channel: %s %d\n", dataChannel.Label(), *dataChannel.ID())
+	dataChannel.OnOpen(func() {
+		fmt.Printf("Data channel '%s - %d' open\n", dataChannel.Label(), dataChannel.ID())
 
-		// register opening
-		dataChannel.OnOpen(func() {
-			fmt.Printf("Data channel '%s - %d' open\n", dataChannel.Label(), dataChannel.ID())
+		// detach data channel
+		raw, dErr := dataChannel.Detach()
+		if dErr != nil {
+			log.Fatal(err)
+		}
 
-			// detach data channel
-			raw, dErr := dataChannel.Detach()
-			if dErr != nil {
-				log.Fatal(err)
-			}
+		// start read loop
+		go cfg.ReadLoop(raw)
 
-			// start read loop
-			go ReadLoop(raw)
-
-			// start write loop
-			go WriteLoop(raw)
-		})
+		// start write loop
+		go cfg.WriteLoop(raw)
 	})
 
 	offer, err := peerConnection.CreateOffer(nil)
@@ -255,20 +280,31 @@ func (cfg *apiConfig) rpiConnect() {
 		log.Fatal(err)
 	}
 
+	//time.Sleep(1 * time.Second)
+
 	<-gatherComplete
 
-	fmt.Println(encode(peerConnection.LocalDescription()))
+	//fmt.Println(string(encode(peerConnection.LocalDescription())))
 
 	// send sdp to server
-	//go cfg.createDeviceSession(offer)
+	go cfg.createDeviceSession(*peerConnection.LocalDescription())
 
-	answer := webrtc.SessionDescription{}
-	decode(<-sdpChan, &answer)
+	answer := webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP: <-cfg.sdpChan,
+	}
+	//decode(<-cfg.sdpChan, &answer)
 
 	err = peerConnection.SetRemoteDescription(answer)
 	if err != nil {
 		log.Fatal(err)
 	}
+    // Put local terminal into raw mode
+    oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	// block forever
 	select{}
@@ -278,12 +314,19 @@ func (cfg *apiConfig) createDeviceSession(offer webrtc.SessionDescription) {
 	spdData := encode(&offer)
 	r, err := http.NewRequest(
 		"POST",
-		"https://connect.raspberrypi.com/connections",
+		fmt.Sprintf("https://connect.raspberrypi.com/devices/%s/connections", cfg.deviceInfo.device.Id),
 		bytes.NewBuffer([]byte(spdData)),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
+	setHeader(
+		r,
+		"application/octet-stream",
+		"https://connect.raspberrypi.com",
+		fmt.Sprintf("https://connect.raspberrypi.com/devices/%s/remote-shell-session", cfg.deviceInfo.device.Id),
+	)
+	r.Header.Set("X-CSRF-Token", cfg.deviceInfo.csrfToken)
 
 	resp, err := cfg.client.Do(r)
 	if err != nil {
@@ -292,61 +335,112 @@ func (cfg *apiConfig) createDeviceSession(offer webrtc.SessionDescription) {
 	if resp.StatusCode >= 400 {
 		log.Fatalf("Failed to create device session: %s\n", resp.Status)
 	}
+	location := resp.Header.Get("location")
+	if location == "" {
+		log.Fatal("Failed to create device session: No location in response\n")
+	}
 
-	// continue ICE
-	return
+	sdpResponse := SDPResponse{}
+
+	for {
+		time.Sleep(500 * time.Millisecond)
+
+		r, err := http.NewRequest(
+			"GET",
+			"https://connect.raspberrypi.com" + location,
+			nil,
+		)
+		if err != nil {
+			log.Fatal(err)
+		}
+		setHeader(
+			r,
+			"",
+			"https://connect.raspberrypi.com",
+			fmt.Sprintf(
+				"https://connect.raspberrypi.com/devices/%s/remote-shell-session", 
+				cfg.deviceInfo.device.Id,
+			),
+		)
+		r.Header.Set("Accept", "*/*")
+		r.Header.Set("Priority", "u=4")
+		r.Header.Set("Sec-Fetch-Dest", "empty")
+		r.Header.Set("Sec-Fetch-Mode", "cors")
+		r.Header.Del("Content-Type")
+		r.Header.Del("Origin")
+
+		resp, err = cfg.client.Do(r)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if resp.StatusCode >= 400 {
+			log.Fatalf("Error checking client SDP status: %s\n", resp.Status)
+		}
+
+		body, err := httpdecompressor.ReadAll(resp)
+		if err != nil {
+			log.Fatal(err)
+		}
+		resp.Body.Close()
+
+		err = json.Unmarshal(body, &sdpResponse)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if sdpResponse.Answer != nil {
+			break
+		}
+		sdpResponse = SDPResponse{}
+	}
+
+	// fmt.Printf("Accept: %s\n", sdpResponse.Answer.Sdp)
+
+	cfg.sdpChan <- sdpResponse.Answer.Sdp
 }
 
 const (
-	messageSize = 16
+	messageSize = 8192
 )
 
-func ReadLoop(d io.Reader) {
+func (cfg *apiConfig) ReadLoop(d io.Reader) {
+	fmt.Println("Read loop started")
+	fmt.Printf("Writing secret to channel: %s", cfg.deviceInfo.device.SigningSecret)
+	buffer := make([]byte, messageSize)
 	for {
-		buffer := make([]byte, messageSize)
 		n, err := d.Read(buffer)
 		if err != nil {
 			fmt.Printf("data channel closed: %s\n", err)
 			return
 		}
-		fmt.Printf("Received: %s", buffer[:n])
+		//fmt.Printf("Received: %s", buffer[:n])
+		os.Stdout.Write(buffer[:n])
 	}
 }
 
-func WriteLoop(d io.Writer) {
-	ticker := time.NewTicker(5*time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		message, err := randutil.GenerateCryptoRandomString(
-			messageSize, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-		)
+func (cfg *apiConfig) WriteLoop(d io.Writer) {
+	fmt.Println("Write loop started")
+	buffer := make([]byte, messageSize)
+	for {
+		n, err := os.Stdin.Read(buffer)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("Sending: %s\n", message)
-		if _, err := d.Write([]byte(message)); err != nil {
-			log.Fatal(err)
+		if n > 0 {
+			_, err = d.Write(buffer[:n])
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }
 
-func encode(spd *webrtc.SessionDescription) string {
-	b, err := json.Marshal(spd)
+func encode(sdp *webrtc.SessionDescription) []byte {
+	b, err := json.Marshal(sdp)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	return base64.StdEncoding.EncodeToString(b)
-}
-
-func decode(spdString string, spd *webrtc.SessionDescription) {
-	b, err := base64.StdEncoding.DecodeString(spdString)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err = json.Unmarshal(b, spd); err != nil {
-		log.Fatal(err)
-	}
+	return b //base64.StdEncoding.EncodeToString(b)
 }
 
 func getSessionInformation(body string) []string {
@@ -362,5 +456,14 @@ func getSessionInformation(body string) []string {
 		return matches[0]
 	}
 	return nil
+}
+
+func getSessionToken(body string) string {
+	pattern := regexp.MustCompile(`name="csrf-token" content="([^"]*)"`)
+	matches := pattern.FindAllStringSubmatch(body, -1)
+	if len(matches) == 1 {
+		return matches[0][1]
+	}
+	return ""
 }
 
