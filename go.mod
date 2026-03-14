@@ -4,6 +4,8 @@ go 1.25.0
 
 require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
+	github.com/briandowns/spinner v1.23.2 // indirect
+	github.com/fatih/color v1.7.0 // indirect
 	github.com/fereidani/httpdecompressor v0.0.0-20250320190614-ccdf59c9caa2 // indirect
 	github.com/google/brotli/go/cbrotli v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -11,6 +13,8 @@ require (
 	github.com/juju/go4 v0.0.0-20160222163258-40d72ab9641a // indirect
 	github.com/juju/persistent-cookiejar v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/mattn/go-colorable v0.1.2 // indirect
+	github.com/mattn/go-isatty v0.0.8 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
