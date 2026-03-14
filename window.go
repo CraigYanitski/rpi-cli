@@ -3,6 +3,7 @@ package main
 import (
 	//"encoding/json"
 	"fmt"
+	"time"
 	//"io"
 	"os"
 	"os/signal"
@@ -28,7 +29,7 @@ func getWindowSize() (*WindowSize, error) {
 		Cols: uint16(width),
 		Rows: uint16(height),
 		ColsChanged: true,
-		RowsChanged: false,
+		RowsChanged: true,
 	}
 	return ws, nil
 }
@@ -64,9 +65,11 @@ func sendResize(d *webrtc.DataChannel, size *WindowSize) error {
 	//if err != nil {
 	//	return err
 	//}
+	time.Sleep(100 * time.Millisecond)
+
 	data := fmt.Sprintf(
-		`{\"cols\":%d,\"rows\":%d,\"colsChanged\":%v,\"rowsChanged\":%v}`,
-		size.Cols,
+		`{"data_type":"string","data":"{\"cols\":%d,\"rows\":%d,\"colsChanged\":%v,\"rowsChanged\":%v}"`,
+		117,
 		size.Rows,
 		size.ColsChanged,
 		size.RowsChanged,
