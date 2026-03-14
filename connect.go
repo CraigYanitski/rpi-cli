@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -20,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/pion/webrtc/v4"
-	"golang.org/x/term"
 )
 
 type DeviceInfo struct {
@@ -84,6 +82,14 @@ type SDPResponse struct {
 		Type  string  `json:"type"`
 		Sdp   string  `json:"sdp"`
 	}  `json:"answer"`
+}
+
+func ptrBool(val bool) *bool {
+	return &val
+}
+
+func ptrUint16(val uint16) *uint16 {
+	return &val
 }
 
 func (cfg *apiConfig) rpiConnect() {
@@ -259,14 +265,28 @@ func (cfg *apiConfig) rpiConnect() {
 	})
 
 	// create shell data channel
-	shellChannel, err := peerConnection.CreateDataChannel("shell", nil)
+	shellChannel, err := peerConnection.CreateDataChannel("shell", &webrtc.DataChannelInit{
+		Ordered: ptrBool(true),
+		Negotiated: ptrBool(false),
+		ID: ptrUint16(uint16(1)),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// create resize data channel
+	resizeChannel, err := peerConnection.CreateDataChannel("resize", &webrtc.DataChannelInit{
+		Ordered: ptrBool(true),
+		Negotiated: ptrBool(false),
+		ID: ptrUint16(uint16(0)),
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// register shell data channel
 	shellChannel.OnOpen(func() {
-		fmt.Printf("Data channel '\"%s\" - %d' open\n", shellChannel.Label(), shellChannel.ID())
+		fmt.Printf("Data channel (%d) '\"%s\" - %d' open\n", *shellChannel.ID(), shellChannel.Label(), shellChannel.ID())
 
 		// detach data channel
 		raw, err := shellChannel.Detach()
@@ -286,40 +306,27 @@ func (cfg *apiConfig) rpiConnect() {
 		go cfg.WriteLoop(raw, cancel)
 	})
 
-	// create resize data channel
-	resizeChannel, err := peerConnection.CreateDataChannel("resize", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// register resize data channel
 	resizeChannel.OnOpen(func() {
-		fmt.Printf("Data channel '\"%s\" - %d' open\n", resizeChannel.Label(), resizeChannel.ID())
+		fmt.Printf("Data channel (%d) '\"%s\" - %d' open\n", *resizeChannel.ID(), resizeChannel.Label(), resizeChannel.ID())
 
 		// detach data channel
-		raw, dErr := resizeChannel.Detach()
-		if dErr != nil {
-			log.Fatal(err)
-		}
+		//raw, dErr := resizeChannel.Detach()
+		//if dErr != nil {
+		//	log.Fatal(err)
+		//}
 
 		// Create context for data channel
 		ctx, cancel := context.WithCancel(cfg.ctx)
 		cfg.rsCtx = ctx
 		defer cancel()
 
-		go func() {
-			buffer := make([]byte, 1)
-			for {
-				_, err := raw.Read(buffer)
-				if err != nil {
-					cancel()
-					return
-				}
-			}
-		}()
+		resizeChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+			cancel()
+		})
 
 		// start resize watch loop
-		go cfg.watchResize(raw)
+		go cfg.watchResize(resizeChannel)
 	})
 
 
@@ -448,52 +455,6 @@ func (cfg *apiConfig) createDeviceSession(offer webrtc.SessionDescription) {
 	// fmt.Printf("Accept: %s\n", sdpResponse.Answer.Sdp)
 
 	cfg.sdpChan <- sdpResponse.Answer.Sdp
-}
-
-const (
-	messageSize = 8192
-)
-
-func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
-	time.Sleep(500 * time.Millisecond)
-
-    // Put local terminal into raw mode
-    oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer term.Restore(int(os.Stdin.Fd()), oldState)
-
-	fmt.Print("\r\n")
-
-	time.Sleep(500*time.Millisecond)
-	buffer := make([]byte, messageSize)
-	for {
-		n, err := d.Read(buffer)
-		if err != nil {
-			// fmt.Printf("data channel closed: %s\n", err)
-			return
-		}
-		//fmt.Printf("Received: %s", buffer[:n])
-		os.Stdout.Write(buffer[:n])
-	}
-}
-
-func (cfg *apiConfig) WriteLoop(d io.Writer, cancel context.CancelFunc) {
-	time.Sleep(1*time.Second)
-	buffer := make([]byte, messageSize)
-	for {
-		n, err := os.Stdin.Read(buffer)
-		if err != nil {
-			return
-		}
-		if n > 0 {
-			_, err = d.Write(buffer[:n])
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
 }
 
 //func (cfg *apiConfig) WatchLoop(d io.Writer) {

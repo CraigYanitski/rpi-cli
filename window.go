@@ -3,11 +3,12 @@ package main
 import (
 	//"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/pion/webrtc/v4"
 	"golang.org/x/term"
 )
 
@@ -32,13 +33,13 @@ func getWindowSize() (*WindowSize, error) {
 	return ws, nil
 }
 
-func (cfg *apiConfig) watchResize(d io.Writer) {
+func (cfg *apiConfig) watchResize(d *webrtc.DataChannel) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGWINCH)
 	defer signal.Stop(sigCh)
 
 	size, err := getWindowSize()
-	fmt.Printf("%v \r\n", size)
+	fmt.Printf("%v \r\n", *size)
 	if err == nil {
 		sendResize(d, size)
 	}
@@ -58,7 +59,7 @@ func (cfg *apiConfig) watchResize(d io.Writer) {
 	}
 }
 
-func sendResize(d io.Writer, size *WindowSize) error {
+func sendResize(d *webrtc.DataChannel, size *WindowSize) error {
 	//data, err := json.Marshal(size)
 	//if err != nil {
 	//	return err
@@ -73,7 +74,7 @@ func sendResize(d io.Writer, size *WindowSize) error {
 
 	fmt.Printf("%s\r\n", data)
 
-	_, err := d.Write([]byte(data))
+	err := d.SendText(data)
 	if err != nil {
 		return err
 	}
