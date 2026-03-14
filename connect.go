@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/fereidani/httpdecompressor"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -85,6 +87,14 @@ type SDPResponse struct {
 }
 
 func (cfg *apiConfig) rpiConnect() {
+	// start spinner notification while connecting to peer
+	s := spinner.New(spinner.CharSets[11], 100 * time.Millisecond)
+	s.Reverse()
+	s.Color("magenta", "bold")
+	s.Suffix = " Connecting to signalling service"
+	s.Start()
+
+	// load relevant URL
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal(err)
@@ -182,7 +192,7 @@ func (cfg *apiConfig) rpiConnect() {
 	deviceInfo := &DeviceInfo{}
 	//fmt.Print("\n--- Device Information ---\n")
 	if shellInfo != nil {
-		// s := html.UnescapeString(shellInfo[0])
+		// str := html.UnescapeString(shellInfo[0])
 		deviceInfo.controller = html.UnescapeString(shellInfo[1])
 		deviceInfo.sessionId, _ = uuid.Parse(html.UnescapeString(shellInfo[2]))
 		d := html.UnescapeString(shellInfo[3])
@@ -197,7 +207,7 @@ func (cfg *apiConfig) rpiConnect() {
 			log.Fatal(err)
 		}
 		deviceInfo.iceConfig = *iceConfig
-		// fmt.Printf("  string: %s\n", s)
+		// fmt.Printf("  string: %s\n", str)
 		//fmt.Printf("  controller: %s\n", deviceInfo.controller)
 		//fmt.Printf("  session-id: %s\n", deviceInfo.sessionId)
 		//fmt.Printf("  device: %s\n", deviceInfo.device)
@@ -205,6 +215,9 @@ func (cfg *apiConfig) rpiConnect() {
 	} else {
 		log.Fatal("Unable to collect device information")
 	}
+
+	// update spinner description
+	s.Suffix = fmt.Sprintf(" Waiting for response from %s...", deviceInfo.device.Name)
 
 	sessionToken := getSessionToken(string(body))
 	if sessionToken != "" {
@@ -245,28 +258,70 @@ func (cfg *apiConfig) rpiConnect() {
 		}
 	})
 
-	// create data channel
-	dataChannel, err := peerConnection.CreateDataChannel("shell", nil)
+	// create shell data channel
+	shellChannel, err := peerConnection.CreateDataChannel("shell", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// register data channel
-	dataChannel.OnOpen(func() {
-		fmt.Printf("Data channel '%s - %d' open\n", dataChannel.Label(), dataChannel.ID())
+	// register shell data channel
+	shellChannel.OnOpen(func() {
+		fmt.Printf("Data channel '\"%s\" - %d' open\n", shellChannel.Label(), shellChannel.ID())
 
 		// detach data channel
-		raw, dErr := dataChannel.Detach()
+		raw, err := shellChannel.Detach()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Create context for data channel
+		ctx, cancel := context.WithCancel(cfg.ctx)
+		cfg.shCtx = ctx
+		defer cancel()
+
+		// start read loop
+		go cfg.ReadLoop(raw, cancel)
+
+		// start write loop
+		go cfg.WriteLoop(raw, cancel)
+	})
+
+	// create resize data channel
+	resizeChannel, err := peerConnection.CreateDataChannel("resize", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// register resize data channel
+	resizeChannel.OnOpen(func() {
+		fmt.Printf("Data channel '\"%s\" - %d' open\n", resizeChannel.Label(), resizeChannel.ID())
+
+		// detach data channel
+		raw, dErr := resizeChannel.Detach()
 		if dErr != nil {
 			log.Fatal(err)
 		}
 
-		// start read loop
-		go cfg.ReadLoop(raw)
+		// Create context for data channel
+		ctx, cancel := context.WithCancel(cfg.ctx)
+		cfg.rsCtx = ctx
+		defer cancel()
 
-		// start write loop
-		go cfg.WriteLoop(raw)
+		go func() {
+			buffer := make([]byte, 1)
+			for {
+				_, err := raw.Read(buffer)
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}()
+
+		// start resize watch loop
+		go cfg.watchResize(raw)
 	})
+
 
 	offer, err := peerConnection.CreateOffer(nil)
 	if err != nil {
@@ -295,16 +350,13 @@ func (cfg *apiConfig) rpiConnect() {
 	}
 	//decode(<-cfg.sdpChan, &answer)
 
+	// stop spinner
+	s.Stop()
+
 	err = peerConnection.SetRemoteDescription(answer)
 	if err != nil {
 		log.Fatal(err)
 	}
-    // Put local terminal into raw mode
-    oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	// block forever
 	select{}
@@ -402,14 +454,24 @@ const (
 	messageSize = 8192
 )
 
-func (cfg *apiConfig) ReadLoop(d io.Reader) {
-	fmt.Println("Read loop started")
-	fmt.Printf("Writing secret to channel: %s", cfg.deviceInfo.device.SigningSecret)
+func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
+	time.Sleep(500 * time.Millisecond)
+
+    // Put local terminal into raw mode
+    oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	fmt.Print("\r\n")
+
+	time.Sleep(500*time.Millisecond)
 	buffer := make([]byte, messageSize)
 	for {
 		n, err := d.Read(buffer)
 		if err != nil {
-			fmt.Printf("data channel closed: %s\n", err)
+			// fmt.Printf("data channel closed: %s\n", err)
 			return
 		}
 		//fmt.Printf("Received: %s", buffer[:n])
@@ -417,13 +479,13 @@ func (cfg *apiConfig) ReadLoop(d io.Reader) {
 	}
 }
 
-func (cfg *apiConfig) WriteLoop(d io.Writer) {
-	fmt.Println("Write loop started")
+func (cfg *apiConfig) WriteLoop(d io.Writer, cancel context.CancelFunc) {
+	time.Sleep(1*time.Second)
 	buffer := make([]byte, messageSize)
 	for {
 		n, err := os.Stdin.Read(buffer)
 		if err != nil {
-			log.Fatal(err)
+			return
 		}
 		if n > 0 {
 			_, err = d.Write(buffer[:n])
@@ -433,6 +495,17 @@ func (cfg *apiConfig) WriteLoop(d io.Writer) {
 		}
 	}
 }
+
+//func (cfg *apiConfig) WatchLoop(d io.Writer) {
+//	rsChan := make(chan *WindowSize, 1)
+//	go watchResize(rsChan)
+//
+//	for size := range rsChan {
+//		if err := sendResize(d, size); err != nil {
+//			log.Fatal(err)
+//		}
+//	}
+//}
 
 func encode(sdp *webrtc.SessionDescription) []byte {
 	b, err := json.Marshal(sdp)

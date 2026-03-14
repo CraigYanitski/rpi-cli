@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
+
 	//"net/http/httputil"
 	"regexp"
 	"strings"
@@ -30,6 +32,9 @@ type Verify struct {
 }
 
 type apiConfig struct {
+	ctx         context.Context
+	shCtx       context.Context
+	rsCtx       context.Context
 	client      *http.Client
 	cookiejar   *cookiejar.Jar
 	webrtcAPI   *webrtc.API
@@ -76,6 +81,7 @@ func main() {
 
 	// initialise api config
 	api := apiConfig{
+		ctx:       context.Background(),
 		client:    client,
 		cookiejar: jar,
 		webrtcAPI: webrtc.NewAPI(webrtc.WithSettingEngine(s)),
