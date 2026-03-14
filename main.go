@@ -120,7 +120,7 @@ func setHeader(r *http.Request, contentType, origin, referer string) {
 	r.Header.Set("Sec-GPC", "1")
 	r.Header.Set("TE", "trailers")
 	r.Header.Set("Upgrade-Insecure-Requests", "1")
-	r.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0")
+	//r.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0")
 }
 
 type debugTransport struct {
