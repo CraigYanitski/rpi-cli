@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +21,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/pion/webrtc/v4"
+)
+
+const (
+	devicesPattern = `(?s)<tr>.*?href="\/devices\/([0-9a-f\-]*)">([^<]*)<\/a>`
 )
 
 type DeviceInfo struct {
@@ -106,7 +112,7 @@ func (cfg *apiConfig) rpiConnect() {
 		log.Fatal(err)
 	}
 
-	deviceURL := os.Getenv("RPI_DEVICE_URL")
+	//deviceURL := os.Getenv("RPI_DEVICE_URL")
 
 	// find way to list devices at connect.raspberrypi.com/devices
 	r, err := http.NewRequest(
@@ -164,6 +170,18 @@ func (cfg *apiConfig) rpiConnect() {
 	}
 	resp.Body.Close()
 
+	// get available devices
+	s.Stop()  // stop spinner for printing
+	devices := [][]string{}
+	pattern := regexp.MustCompile(devicesPattern)
+	matches := pattern.FindAllStringSubmatch(string(body), -1)
+	for _, match := range matches {
+		devices = append(devices, []string{match[1], match[2]})
+	}
+
+	// select device
+	deviceURL := getDeviceURL(devices)
+
 	r, err = http.NewRequest(
 		"GET",
 		deviceURL,
@@ -190,7 +208,8 @@ func (cfg *apiConfig) rpiConnect() {
 	// fmt.Printf("\n=== Final Response from %s ===\n\n%s\n", r.Header.Get("Host"), string(body))
 
 
-	// --- WEBRTC ---
+
+	// ===== WEBRTC =====
 
 
 	// extract and decode device information
@@ -224,6 +243,7 @@ func (cfg *apiConfig) rpiConnect() {
 
 	// update spinner description
 	s.Suffix = fmt.Sprintf(" Waiting for response from %s...", deviceInfo.device.Name)
+	s.Start()
 
 	sessionToken := getSessionToken(string(body))
 	if sessionToken != "" {
@@ -499,5 +519,45 @@ func getSessionToken(body string) string {
 		return matches[0][1]
 	}
 	return ""
+}
+
+func getDeviceURL(devices [][]string) string {
+	if devices == nil {
+		return ""
+	}
+
+	if len(devices) == 1 {
+		return fmt.Sprintf("https://connect.raspberrypi.com/devices/%s/remote-shell-session", devices[0][0])
+	}
+
+	fmt.Println("\nDevices\n-------")
+	for i, name := range devices {
+		fmt.Printf("%d: %s\n", i+1, name[1])
+	}
+
+	id := 0
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("\nChoose from %d device(s): ", len(devices))
+	for id == 0 {
+		idStr, err := reader.ReadString('\n')
+		if err != nil {
+			err = nil
+			fmt.Print("Error; please enter an integer: ")
+			continue
+		}
+
+		id, err = strconv.Atoi(strings.TrimSpace(idStr))
+		if err != nil {
+			err = nil
+			fmt.Print("Please enter an integer: ")
+			continue
+		} else if id <= 0 || id > len(devices) {
+			id = 0
+			fmt.Print("Please choose one of the available values: ")
+			continue
+		}
+	}
+
+	return fmt.Sprintf("https://connect.raspberrypi.com/devices/%s/remote-shell-session", devices[id-1][0])
 }
 
