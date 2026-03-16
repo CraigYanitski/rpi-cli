@@ -1,9 +1,9 @@
 package main
 
 import (
-	//"encoding/json"
+	"encoding/json"
 	"fmt"
-	"time"
+	"log"
 	//"io"
 	"os"
 	"os/signal"
@@ -40,9 +40,11 @@ func (cfg *apiConfig) watchResize(d *webrtc.DataChannel) {
 	defer signal.Stop(sigCh)
 
 	size, err := getWindowSize()
-	fmt.Printf("%v \r\n", *size)
 	if err == nil {
-		sendResize(d, size)
+		err = sendResize(d, size)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	for {
@@ -50,34 +52,33 @@ func (cfg *apiConfig) watchResize(d *webrtc.DataChannel) {
 		case <- sigCh:
 			size, err = getWindowSize()
 			if err != nil {
+				fmt.Print("error getting window size...\r\n")
 				continue
 			}
 			sendResize(d, size)
 
 		case <-cfg.rsCtx.Done():
+			fmt.Print("closing resize watch loop\r\n")
 			return
 		}
 	}
 }
 
 func sendResize(d *webrtc.DataChannel, size *WindowSize) error {
-	//data, err := json.Marshal(size)
-	//if err != nil {
-	//	return err
-	//}
-	time.Sleep(100 * time.Millisecond)
+	data, err := json.Marshal(size)
+	if err != nil {
+		return err
+	}
 
-	data := fmt.Sprintf(
-		`{"data_type":"string","data":"{\"cols\":%d,\"rows\":%d,\"colsChanged\":%v,\"rowsChanged\":%v}"`,
-		117,
-		size.Rows,
-		size.ColsChanged,
-		size.RowsChanged,
-	)
+	//data := fmt.Sprintf(
+	//	`{"cols":%d,"rows":%d,"colsChanged":%v,"rowsChanged":%v}`,
+	//	size.Cols,
+	//	size.Rows,
+	//	size.ColsChanged,
+	//	size.RowsChanged,
+	//)
 
-	fmt.Printf("%s\r\n", data)
-
-	err := d.SendText(data)
+	err = d.SendText(string(data))
 	if err != nil {
 		return err
 	}
