@@ -19,7 +19,6 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/fereidani/httpdecompressor"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -105,14 +104,6 @@ func (cfg *apiConfig) rpiConnect() {
 	s.Color("magenta", "bold")
 	s.Suffix = " Connecting to signalling service"
 	s.Start()
-
-	// load relevant URL
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//deviceURL := os.Getenv("RPI_DEVICE_URL")
 
 	// find way to list devices at connect.raspberrypi.com/devices
 	r, err := http.NewRequest(
