@@ -1,0 +1,6 @@
+#!/bin/sh
+
+mkdir -p ~/.rpi-cli
+touch ~/.rpi-cli/cookies.json
+go build -o rpi-cli .
+cp rpi-cli ~/.local/bin/rpi-cli
