@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	//"net/http/httputil"
 	"regexp"
@@ -47,8 +49,12 @@ func main() {
 	fmt.Println("Starting RPI-CLI")
 
 	// open saved cookie jar
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
 	jarOptions := &cookiejar.Options{
-		Filename: "cookies.json",
+		Filename: filepath.Join(userHome, ".rpi-cli/cookies.json"),
 	}
 	jar, err := cookiejar.New(jarOptions)
 	if err != nil {
