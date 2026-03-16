@@ -194,9 +194,6 @@ func (cfg *apiConfig) rpiConnect() {
 		log.Fatal(err)
 	}
 	resp.Body.Close()
-	
-	// available devices should appear in this response
-	// fmt.Printf("\n=== Final Response from %s ===\n\n%s\n", r.Header.Get("Host"), string(body))
 
 
 
@@ -250,12 +247,13 @@ func (cfg *apiConfig) rpiConnect() {
 		ICEServers: deviceInfo.iceConfig.IceServers,
 	}
 
+	// peer connection
 	peerConnection, err := cfg.webrtcAPI.NewPeerConnection(config)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func() {
-		if cErr := peerConnection.Close(); cErr != nil {
+		if err := peerConnection.Close(); err != nil {
 			log.Fatal(err)
 		}
 	}()
@@ -275,21 +273,51 @@ func (cfg *apiConfig) rpiConnect() {
 		}
 	})
 
+	// register data channel handlers
+	peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
+		fmt.Printf("Data channel (%d) '\"%s\" - %d' open\n", d.ID(), d.Label(), d.ID())
+
+		//if d.Label() == "shell" {
+		//	d.OnOpen(func() {
+		//		// detach data channel
+		//		raw, err := d.Detach()
+		//		if err != nil {
+		//			log.Fatal(err)
+		//		}
+
+		//		// Create context for data channel
+		//		ctx, cancel := context.WithCancel(cfg.ctx)
+		//		cfg.shCtx = ctx
+		//		defer cancel()
+
+		//		// start read loop
+		//		go cfg.ReadLoop(raw, cancel)
+
+		//		// start write loop
+		//		go cfg.WriteLoop(raw, cancel)
+		//	})
+		//}
+		if d.Label() == "resize" {
+			d.OnOpen(func() {
+				// Create context for data channel
+				ctx, cancel := context.WithCancel(cfg.ctx)
+				cfg.rsCtx = ctx
+
+				d.OnMessage(func(msg webrtc.DataChannelMessage) {
+					cancel()
+				})
+
+				// start resize watch loop
+				go cfg.watchResize(d)
+			})
+		}
+	})
+
 	// create shell data channel
 	shellChannel, err := peerConnection.CreateDataChannel("shell", &webrtc.DataChannelInit{
 		Ordered: ptrBool(true),
 		Negotiated: ptrBool(false),
 		ID: ptrUint16(uint16(1)),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// create resize data channel
-	resizeChannel, err := peerConnection.CreateDataChannel("resize", &webrtc.DataChannelInit{
-		Ordered: ptrBool(true),
-		Negotiated: ptrBool(false),
-		ID: ptrUint16(uint16(0)),
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -317,29 +345,6 @@ func (cfg *apiConfig) rpiConnect() {
 		go cfg.WriteLoop(raw, cancel)
 	})
 
-	// register resize data channel
-	resizeChannel.OnOpen(func() {
-		fmt.Printf("Data channel (%d) '\"%s\" - %d' open\n", *resizeChannel.ID(), resizeChannel.Label(), resizeChannel.ID())
-
-		// detach data channel
-		//raw, dErr := resizeChannel.Detach()
-		//if dErr != nil {
-		//	log.Fatal(err)
-		//}
-
-		// Create context for data channel
-		ctx, cancel := context.WithCancel(cfg.ctx)
-		cfg.rsCtx = ctx
-		defer cancel()
-
-		resizeChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-			cancel()
-		})
-
-		// start resize watch loop
-		go cfg.watchResize(resizeChannel)
-	})
-
 
 	offer, err := peerConnection.CreateOffer(nil)
 	if err != nil {
@@ -353,11 +358,7 @@ func (cfg *apiConfig) rpiConnect() {
 		log.Fatal(err)
 	}
 
-	//time.Sleep(1 * time.Second)
-
 	<-gatherComplete
-
-	//fmt.Println(string(encode(peerConnection.LocalDescription())))
 
 	// send sdp to server
 	go cfg.createDeviceSession(*peerConnection.LocalDescription())
@@ -366,10 +367,15 @@ func (cfg *apiConfig) rpiConnect() {
 		Type: webrtc.SDPTypeAnswer,
 		SDP: <-cfg.sdpChan,
 	}
-	//decode(<-cfg.sdpChan, &answer)
 
 	// stop spinner
 	s.Stop()
+
+	// print local and remote SDPs
+	//fmt.Println("LOCAL")
+	//fmt.Println(peerConnection.LocalDescription().SDP)
+	//fmt.Println("\nREMOTE")
+	//fmt.Println(answer.SDP)
 
 	err = peerConnection.SetRemoteDescription(answer)
 	if err != nil {
@@ -467,17 +473,6 @@ func (cfg *apiConfig) createDeviceSession(offer webrtc.SessionDescription) {
 
 	cfg.sdpChan <- sdpResponse.Answer.Sdp
 }
-
-//func (cfg *apiConfig) WatchLoop(d io.Writer) {
-//	rsChan := make(chan *WindowSize, 1)
-//	go watchResize(rsChan)
-//
-//	for size := range rsChan {
-//		if err := sendResize(d, size); err != nil {
-//			log.Fatal(err)
-//		}
-//	}
-//}
 
 func encode(sdp *webrtc.SessionDescription) []byte {
 	b, err := json.Marshal(sdp)
