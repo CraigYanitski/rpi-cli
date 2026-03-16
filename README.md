@@ -27,14 +27,18 @@ Traversal Using Relays around NAT (TURN) servers to ensure a robust and secure c
 Installation
 ---
 
-Currently this app is setup to run in its own folder.
-Until it is further developed, clone and run the client by running,
+A caution that `rpi-cli` relies on a private file relative to the home directory in order to 
+manage cookies (unless you would like to continuously log into your RPI account).
+This repo can be cloned and installed by running,
 
 ```bash
 git clone https://github.com/CraigYanitski/rpi-cli
 cd rpi-cli
-rpi-cli
+./install
 ```
+
+The `rpi-cli` binary will be built and moved to `~/.local/bin/`, which should be in your 
+executable path.
 
 Development
 ---
@@ -44,4 +48,6 @@ I started with a rather lengthy bash script to make sure I get the appropriate
 responses, but I have since moved everything into a Golang client.
 Now the client is functional, but there are many quality of life updates to be made.
 Please feel free to fork this repository and contribute to its development.
+
+Please also feel free suggest improvements that should be made.
 
