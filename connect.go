@@ -260,22 +260,22 @@ func (cfg *apiConfig) rpiConnect() {
 
 	// notify of state change
 	peerConnection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		fmt.Printf("Peer connection state change: %s\n", state.String())
+		// fmt.Printf("Peer connection state change: %s\n", state.String())
 
 		if state == webrtc.PeerConnectionStateFailed {
-			fmt.Println("Peer connection has failed; exiting")
+			//fmt.Println("Peer connection has failed; exiting")
 			os.Exit(0)
 		}
 
 		if state == webrtc.PeerConnectionStateClosed {
-			fmt.Println("Peer connection closed")
+			//fmt.Println("Peer connection closed")
 			os.Exit(0)
 		}
 	})
 
 	// register data channel handlers
 	peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
-		fmt.Printf("Data channel \"%s\" (id: %d)\n", d.Label(), *d.ID())
+		// fmt.Printf("Data channel \"%s\" (id: %d)\n", d.Label(), *d.ID())
 
 		//if d.Label() == "shell" {
 		//	d.OnOpen(func() {
@@ -325,7 +325,7 @@ func (cfg *apiConfig) rpiConnect() {
 
 	// register shell data channel
 	shellChannel.OnOpen(func() {
-		fmt.Printf("Data channel \"%s\" (id: %d)\n", shellChannel.Label(), *shellChannel.ID())
+		//fmt.Printf("Data channel \"%s\" (id: %d)\n", shellChannel.Label(), *shellChannel.ID())
 
 		// detach data channel
 		raw, err := shellChannel.Detach()
