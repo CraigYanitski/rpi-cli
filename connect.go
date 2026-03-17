@@ -171,6 +171,7 @@ func (cfg *apiConfig) rpiConnect() {
 
 	// select device
 	s.Stop()  // stop spinner for printing
+	fmt.Println(completedStyle.Render("✓"+s.Suffix))
 	deviceName, deviceURL := getDeviceURL(devices)
 
 	// update spinner description
@@ -370,6 +371,7 @@ func (cfg *apiConfig) rpiConnect() {
 
 	// stop spinner
 	s.Stop()
+	fmt.Println(completedStyle.Render("✓"+s.Suffix))
 
 	// print local and remote SDPs
 	//fmt.Println("LOCAL")
