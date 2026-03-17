@@ -3,4 +3,7 @@
 mkdir -p ~/.rpi-cli
 touch ~/.rpi-cli/cookies.json
 go build -o rpi-cli .
+echo "built sucessfully"
 cp rpi-cli ~/.local/bin/rpi-cli
+cat rpi-cli.txt
+
