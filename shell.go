@@ -6,7 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"time"
+	//"time"
 
 	"golang.org/x/term"
 )
@@ -16,7 +16,7 @@ const (
 )
 
 func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
-	time.Sleep(200 * time.Millisecond)
+	//time.Sleep(200 * time.Millisecond)
 
     // Put local terminal into raw mode
     oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -27,7 +27,7 @@ func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
 
 	fmt.Print("\r\n")
 
-	time.Sleep(200 * time.Millisecond)
+	//time.Sleep(200 * time.Millisecond)
 	buffer := make([]byte, messageSize)
 	for {
 		n, err := d.Read(buffer)
@@ -41,7 +41,7 @@ func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
 }
 
 func (cfg *apiConfig) WriteLoop(d io.Writer, cancel context.CancelFunc) {
-	time.Sleep(200 * time.Millisecond)
+	//time.Sleep(200 * time.Millisecond)
 	buffer := make([]byte, messageSize)
 	for {
 		n, err := os.Stdin.Read(buffer)
