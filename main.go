@@ -7,17 +7,24 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 
 	//"net/http/httputil"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	cookiejar "github.com/juju/persistent-cookiejar"
 	"github.com/pion/webrtc/v4"
 	"golang.org/x/net/http2"
+)
+
+var (
+	completedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#3C3C3C"))
 )
 
 type SignIn struct {
@@ -96,8 +103,17 @@ func main() {
 
 	// ---- CONNECT TO SIGNALLING SERVER ----
 
+	// check if session_id cookie exists (this is long-lived and used to bypass the signin step)
+	idCookies, err := GetCookieNames(jar, "https://id.raspberrypi.com")
+	if err != nil {
+		log.Fatal(err)
+	}
+	isSignedIn := slices.Contains(idCookies, "session_id")
+
 	// sign into rpi id (required once for cookies)
-	//isSignedIn := api.rpiSignIn()
+	if !isSignedIn {
+		api.rpiSignIn()
+	}
 
 	// connect to rpi device
 	api.rpiConnect()
@@ -118,7 +134,7 @@ func setHeader(r *http.Request, contentType, origin, referer string) {
 	r.Header.Set("Content-Type", contentType)
 	r.Header.Set("Origin", origin)
 	r.Header.Set("Priority", "u=0, i")
-	r.Header.Set("Referer",referer)
+	r.Header.Set("Referer", referer)
 	r.Header.Set("Sec-Fetch-Dest", "document")
 	r.Header.Set("Sec-Fetch-Mode", "navigate")
 	r.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -160,6 +176,19 @@ func (d *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	//fmt.Println("=== RESPONSE ===")
 	//fmt.Println(string(dump) + "\n")
     return resp, err
+}
+
+func GetCookieNames(jar *cookiejar.Jar, domain string) ([]string, error) {
+	names := []string{}
+	domainURL, err := url.Parse(domain)
+	if err != nil {
+		return nil, err
+	}
+	cookies := jar.Cookies(domainURL)
+	for _, cookie := range cookies {
+		names = append(names, cookie.Name)
+	}
+	return names, nil
 }
 
 func getAuth(text, filter string, verbose bool) string {
