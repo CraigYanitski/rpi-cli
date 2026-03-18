@@ -1,20 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 
 	//"net/http/httputil"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -24,7 +19,8 @@ import (
 )
 
 var (
-	completedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#3C3C3C"))
+	completedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5bcd02"))
+	failedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#cc0101"))
 )
 
 type SignIn struct {
@@ -103,16 +99,11 @@ func main() {
 
 	// ---- CONNECT TO SIGNALLING SERVER ----
 
-	// check if session_id cookie exists (this is long-lived and used to bypass the signin step)
-	idCookies, err := GetCookieNames(jar, "https://id.raspberrypi.com")
-	if err != nil {
-		log.Fatal(err)
-	}
-	isSignedIn := slices.Contains(idCookies, "session_id")
-
 	// sign into rpi id (required once for cookies)
-	if !isSignedIn {
-		api.rpiSignIn()
+	ok := api.rpiSignIn()
+	if !ok {
+		fmt.Println(failedStyle.Render("✗ Unable to sign into Raspberry Pi ID"))
+		os.Exit(1)
 	}
 
 	// connect to rpi device
@@ -178,51 +169,3 @@ func (d *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
     return resp, err
 }
 
-func GetCookieNames(jar *cookiejar.Jar, domain string) ([]string, error) {
-	names := []string{}
-	domainURL, err := url.Parse(domain)
-	if err != nil {
-		return nil, err
-	}
-	cookies := jar.Cookies(domainURL)
-	for _, cookie := range cookies {
-		names = append(names, cookie.Name)
-	}
-	return names, nil
-}
-
-func getAuth(text, filter string, verbose bool) string {
-	// initialise regexp pattern and scanner for text
-	scanner := bufio.NewScanner(strings.NewReader(text))
-	var i int
-	pattern := regexp.MustCompile(`.*name="([^"]*)" value="([^"]*)".*`)
-
-	// filter each line in text
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if verbose {
-			fmt.Printf("line %d: %s\n", i, line)
-		}
-		i += 1
-
-		// filter line for literal terms
-		if !strings.Contains(line, "authenticity") {
-			continue
-		}
-		if !strings.Contains(line, filter) {
-			continue
-		}
-
-		//fmt.Printf("found: %s\n", line)
-
-		// use regexp pattern to extract authenticity token
-		matches := pattern.FindStringSubmatch(line)
-		if len(matches) != 3 {
-			continue
-		}
-		return matches[2]
-	}
-
-	return ""
-}

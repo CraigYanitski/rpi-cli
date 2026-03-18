@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,10 +11,10 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/CraigYanitski/rpi-cli/internal/utils"
 	"github.com/briandowns/spinner"
 	"github.com/fereidani/httpdecompressor"
 	"github.com/google/uuid"
@@ -128,7 +127,7 @@ func (cfg *apiConfig) rpiConnect() {
 	}
 	resp.Body.Close()
 
-	authToken := getAuth(string(body), "Raspberry", false)
+	authToken := utils.GetAuth(string(body), "Raspberry", false)
 	authValues := url.Values{}
 	authValues.Set("authenticity_token", authToken)
 	authData :=  authValues.Encode()
@@ -172,7 +171,7 @@ func (cfg *apiConfig) rpiConnect() {
 	// select device
 	s.Stop()  // stop spinner for printing
 	fmt.Println(completedStyle.Render("✓"+s.Suffix))
-	deviceName, deviceURL := getDeviceURL(devices)
+	deviceName, deviceURL := utils.GetDeviceURL(devices)
 
 	// update spinner description
 	s.Suffix = fmt.Sprintf(" Waiting for response from %s...", deviceName)
@@ -386,48 +385,5 @@ func (cfg *apiConfig) rpiConnect() {
 
 	// block forever
 	select{}
-}
-
-func getDeviceURL(devices [][]string) (string, string) {
-	if devices == nil {
-		return "", 
-			""
-	}
-
-	if len(devices) == 1 {
-		return devices[0][1], 
-		fmt.Sprintf("https://connect.raspberrypi.com/devices/%s/remote-shell-session", devices[0][0])
-	}
-
-	fmt.Println("\nDevices\n-------")
-	for i, name := range devices {
-		fmt.Printf("%d: %s\n", i+1, name[1])
-	}
-
-	id := 0
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("\nChoose from %d device(s): ", len(devices))
-	for id == 0 {
-		idStr, err := reader.ReadString('\n')
-		if err != nil {
-			err = nil
-			fmt.Print("Error; please enter an integer: ")
-			continue
-		}
-
-		id, err = strconv.Atoi(strings.TrimSpace(idStr))
-		if err != nil {
-			err = nil
-			fmt.Print("Please enter an integer: ")
-			continue
-		} else if id <= 0 || id > len(devices) {
-			id = 0
-			fmt.Print("Please choose one of the available values: ")
-			continue
-		}
-	}
-
-	return devices[id-1][1], 
-		fmt.Sprintf("https://connect.raspberrypi.com/devices/%s/remote-shell-session", devices[id-1][0])
 }
 
