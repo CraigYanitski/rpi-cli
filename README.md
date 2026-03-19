@@ -2,7 +2,7 @@ rpi-cli
 ===
 
 This is meant to be a cli interface to the Raspberry Pi Connect service.
-It uses `connect.raspberrypi.com` as a signaling service to negotiate
+It uses [connect.raspberrypi.com](https://connect.raspberrypi.com) as a signaling service to negotiate
 a direct UDP connection to your raspberry pi device.
 It will eventually perform UDP hole-punching on its own.
 
