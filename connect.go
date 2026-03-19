@@ -9,13 +9,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
+	//"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/CraigYanitski/rpi-cli/internal/utils"
-	"github.com/briandowns/spinner"
 	"github.com/fereidani/httpdecompressor"
 	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
@@ -96,14 +95,7 @@ func ptrUint16(val uint16) *uint16 {
 	return &val
 }
 
-func (cfg *apiConfig) rpiConnect() {
-	// start spinner notification while connecting to peer
-	s := spinner.New(spinner.CharSets[11], 100 * time.Millisecond)
-	s.Reverse()
-	s.Color("magenta", "bold")
-	s.Suffix = " Connecting to signalling service"
-	s.Start()
-
+func (cfg *apiConfig) rpiConnect() bool {
 	// find way to list devices at connect.raspberrypi.com/devices
 	r, err := http.NewRequest(
 		"GET",
@@ -161,23 +153,18 @@ func (cfg *apiConfig) rpiConnect() {
 	resp.Body.Close()
 
 	// get available devices
-	devices := [][]string{}
+	cfg.devices = [][]string{}
 	pattern := regexp.MustCompile(devicesPattern)
 	matches := pattern.FindAllStringSubmatch(string(body), -1)
 	for _, match := range matches {
-		devices = append(devices, []string{match[1], match[2]})
+		cfg.devices = append(cfg.devices, []string{match[1], match[2]})
 	}
 
-	// select device
-	s.Stop()  // stop spinner for printing
-	fmt.Println(completedStyle.Render("✓"+s.Suffix))
-	deviceName, deviceURL := utils.GetDeviceURL(devices)
+	return true
+}
 
-	// update spinner description
-	s.Suffix = fmt.Sprintf(" Waiting for response from %s...", deviceName)
-	s.Start()
-
-	r, err = http.NewRequest(
+func (cfg *apiConfig) connectDevice(deviceURL string) bool {
+	r, err := http.NewRequest(
 		"GET",
 		deviceURL,
 		nil,
@@ -186,14 +173,14 @@ func (cfg *apiConfig) rpiConnect() {
 		log.Fatal(err)
 	}
 
-	resp, err = cfg.client.Do(r)
+	resp, err := cfg.client.Do(r)
 	if err != nil {
 		log.Fatal(err)
 	} else if resp.StatusCode >= 400 {
 		log.Fatalf("Failed to connect to device terminal: received %s", resp.Status)
 	}
 
-	body, err = httpdecompressor.ReadAll(resp)
+	body, err := httpdecompressor.ReadAll(resp)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -252,51 +239,29 @@ func (cfg *apiConfig) rpiConnect() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := peerConnection.Close(); err != nil {
-			log.Fatal(err)
-		}
-	}()
+
+	// add peer connection to api
+	cfg.connections = append(cfg.connections, peerConnection)
 
 	// notify of state change
-	peerConnection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+	cfg.connections[0].OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		// fmt.Printf("Peer connection state change: %s\n", state.String())
 
 		if state == webrtc.PeerConnectionStateFailed {
-			//fmt.Println("Peer connection has failed; exiting")
-			os.Exit(0)
+			fmt.Println("Peer connection has failed; exiting")
+			//os.Exit(0)
 		}
 
 		if state == webrtc.PeerConnectionStateClosed {
-			//fmt.Println("Peer connection closed")
-			os.Exit(0)
+			fmt.Println("Peer connection closed")
+			//os.Exit(0)
 		}
 	})
 
 	// register data channel handlers
-	peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
+	cfg.connections[0].OnDataChannel(func(d *webrtc.DataChannel) {
 		// fmt.Printf("Data channel \"%s\" (id: %d)\n", d.Label(), *d.ID())
 
-		//if d.Label() == "shell" {
-		//	d.OnOpen(func() {
-		//		// detach data channel
-		//		raw, err := d.Detach()
-		//		if err != nil {
-		//			log.Fatal(err)
-		//		}
-
-		//		// Create context for data channel
-		//		ctx, cancel := context.WithCancel(cfg.ctx)
-		//		cfg.shCtx = ctx
-		//		defer cancel()
-
-		//		// start read loop
-		//		go cfg.ReadLoop(raw, cancel)
-
-		//		// start write loop
-		//		go cfg.WriteLoop(raw, cancel)
-		//	})
-		//}
 		if d.Label() == "resize" {
 			d.OnOpen(func() {
 				// Create context for data channel
@@ -305,6 +270,7 @@ func (cfg *apiConfig) rpiConnect() {
 
 				d.OnMessage(func(msg webrtc.DataChannelMessage) {
 					cancel()
+					cfg.closeChan<- true
 				})
 
 				// start resize watch loop
@@ -314,7 +280,7 @@ func (cfg *apiConfig) rpiConnect() {
 	})
 
 	// create shell data channel
-	shellChannel, err := peerConnection.CreateDataChannel("shell", &webrtc.DataChannelInit{
+	shellChannel, err := cfg.connections[0].CreateDataChannel("shell", &webrtc.DataChannelInit{
 		Ordered: ptrBool(true),
 		Negotiated: ptrBool(false),
 		ID: ptrUint16(uint16(1)),
@@ -334,26 +300,25 @@ func (cfg *apiConfig) rpiConnect() {
 		}
 
 		// Create context for data channel
-		ctx, cancel := context.WithCancel(cfg.ctx)
-		cfg.shCtx = ctx
-		defer cancel()
+		//ctx, cancel := context.WithCancel(cfg.ctx)
+		//cfg.shCtx = ctx
 
 		// start read loop
-		go cfg.ReadLoop(raw, cancel)
+		go cfg.ReadLoop(raw)
 
 		// start write loop
-		go cfg.WriteLoop(raw, cancel)
+		go cfg.WriteLoop(raw)
 	})
 
 
-	offer, err := peerConnection.CreateOffer(nil)
+	offer, err := cfg.connections[0].CreateOffer(nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
+	gatherComplete := webrtc.GatheringCompletePromise(cfg.connections[0])
 
-	err = peerConnection.SetLocalDescription(offer)
+	err = cfg.connections[0].SetLocalDescription(offer)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -361,16 +326,12 @@ func (cfg *apiConfig) rpiConnect() {
 	<-gatherComplete
 
 	// send sdp to server
-	go cfg.createDeviceSession(*peerConnection.LocalDescription())
+	go cfg.createDeviceSession(*cfg.connections[0].LocalDescription())
 
 	answer := webrtc.SessionDescription{
 		Type: webrtc.SDPTypeAnswer,
 		SDP: <-cfg.sdpChan,
 	}
-
-	// stop spinner
-	s.Stop()
-	fmt.Println(completedStyle.Render("✓"+s.Suffix))
 
 	// print local and remote SDPs
 	//fmt.Println("LOCAL")
@@ -378,12 +339,13 @@ func (cfg *apiConfig) rpiConnect() {
 	//fmt.Println("\nREMOTE")
 	//fmt.Println(answer.SDP)
 
-	err = peerConnection.SetRemoteDescription(answer)
+	err = cfg.connections[0].SetRemoteDescription(answer)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// block forever
-	select{}
+	//select{}
+	return true
 }
 
