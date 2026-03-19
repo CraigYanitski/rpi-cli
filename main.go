@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -39,9 +38,6 @@ type Verify struct {
 }
 
 type apiConfig struct {
-	ctx          context.Context
-	//shCtx        context.Context
-	rsCtx        context.Context
 	closeChan    chan any
 	client       *http.Client
 	cookiejar    *cookiejar.Jar
@@ -96,7 +92,6 @@ func main() {
 	// initialise api config
 	api := apiConfig{
 		closeChan: make(chan any),
-		ctx:       context.Background(),
 		client:    client,
 		cookiejar: jar,
 		webrtcAPI: webrtc.NewAPI(webrtc.WithSettingEngine(setter)),

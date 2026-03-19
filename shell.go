@@ -31,8 +31,8 @@ func (cfg *apiConfig) ReadLoop(d io.Reader) {
 	for {
 		n, err := d.Read(buffer)
 		if err != nil {
-			// fmt.Printf("data channel closed: %s\n", err)
-			cfg.closeChan<- true
+			fmt.Printf("(read) data channel closed: %s\n", err)
+			close(cfg.closeChan)
 			return
 		}
 		//fmt.Printf("Received: %s", buffer[:n])
@@ -46,7 +46,8 @@ func (cfg *apiConfig) WriteLoop(d io.Writer) {
 	for {
 		n, err := os.Stdin.Read(buffer)
 		if err != nil {
-			cfg.closeChan<- true
+			fmt.Printf("(write) data channel closed: %s\n", err)
+			close(cfg.closeChan)
 			return
 		}
 		if n > 0 {

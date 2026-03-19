@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	//"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -56,11 +55,6 @@ func (cfg *apiConfig) watchResize(d *webrtc.DataChannel) {
 				continue
 			}
 			sendResize(d, size)
-
-		case <-cfg.rsCtx.Done():
-			fmt.Print("closing resize watch loop\r\n")
-			cfg.closeChan<- true
-			return
 		}
 	}
 }
@@ -70,14 +64,6 @@ func sendResize(d *webrtc.DataChannel, size *WindowSize) error {
 	if err != nil {
 		return err
 	}
-
-	//data := fmt.Sprintf(
-	//	`{"cols":%d,"rows":%d,"colsChanged":%v,"rowsChanged":%v}`,
-	//	size.Cols,
-	//	size.Rows,
-	//	size.ColsChanged,
-	//	size.RowsChanged,
-	//)
 
 	err = d.SendText(string(data))
 	if err != nil {

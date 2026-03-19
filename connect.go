@@ -2,14 +2,12 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"html"
 	"log"
 	"net/http"
 	"net/url"
-	//"os"
 	"regexp"
 	"strings"
 	"time"
@@ -103,19 +101,23 @@ func (cfg *apiConfig) rpiConnect() bool {
 		nil,
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 
 	resp, err := cfg.client.Do(r)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	} else if resp.StatusCode >= 400 {
-		log.Fatalf("Failed to sign into rpi account: received %s", resp.Status)
+		log.Printf("Failed to sign into rpi account: received %s", resp.Status)
+		return false
 	}
 
 	body, err := httpdecompressor.ReadAll(resp)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 	resp.Body.Close()
 
@@ -130,7 +132,8 @@ func (cfg *apiConfig) rpiConnect() bool {
 		bytes.NewBuffer([]byte(authData)),
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 	setHeader(
 		r,
@@ -141,9 +144,11 @@ func (cfg *apiConfig) rpiConnect() bool {
 
 	resp, err = cfg.client.Do(r)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	} else if resp.StatusCode >= 400 {
-		log.Fatalf("Failed to authenticate for rpi connect: received %s", resp.Status)
+		log.Printf("Failed to authenticate for rpi connect: received %s", resp.Status)
+		return false
 	}
 
 	body, err = httpdecompressor.ReadAll(resp)
@@ -170,19 +175,23 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 		nil,
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 
 	resp, err := cfg.client.Do(r)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	} else if resp.StatusCode >= 400 {
-		log.Fatalf("Failed to connect to device terminal: received %s", resp.Status)
+		log.Printf("Failed to connect to device terminal: received %s", resp.Status)
+		return false
 	}
 
 	body, err := httpdecompressor.ReadAll(resp)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 	resp.Body.Close()
 
@@ -194,38 +203,43 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 	// extract and decode device information
 	shellInfo := getSessionInformation(string(body))
 	deviceInfo := &DeviceInfo{}
-	//fmt.Print("\n--- Device Information ---\n")
 	if shellInfo != nil {
-		// str := html.UnescapeString(shellInfo[0])
 		deviceInfo.controller = html.UnescapeString(shellInfo[1])
 		deviceInfo.sessionId, _ = uuid.Parse(html.UnescapeString(shellInfo[2]))
 		d := html.UnescapeString(shellInfo[3])
+
 		deviceData := &DeviceData{}
 		if err = json.Unmarshal([]byte(d), deviceData); err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			return false
 		}
+
 		deviceInfo.device = *deviceData
 		ic := html.UnescapeString(shellInfo[4])
+
 		iceConfig := &ICEConfig{}
 		if err = json.Unmarshal([]byte(ic), iceConfig); err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			return false
 		}
+
 		deviceInfo.iceConfig = *iceConfig
-		// fmt.Printf("  string: %s\n", str)
+		//fmt.Print("\n--- Device Information ---\n")
 		//fmt.Printf("  controller: %s\n", deviceInfo.controller)
 		//fmt.Printf("  session-id: %s\n", deviceInfo.sessionId)
 		//fmt.Printf("  device: %s\n", deviceInfo.device)
 		//fmt.Printf("  ice-config: %s\n", deviceInfo.iceConfig)
 	} else {
-		log.Fatal("Unable to collect device information")
+		log.Print("Unable to collect device information")
+		return false
 	}
 
 	sessionToken := getSessionToken(string(body))
 	if sessionToken != "" {
 		deviceInfo.csrfToken = sessionToken
-		//fmt.Printf("  csrf-token: %s\n", deviceInfo.csrfToken)
 	} else {
-		log.Fatal("Unable to collect CSRF token for session")
+		log.Print("Unable to collect CSRF token for session")
+		return false
 	}
 
 	cfg.deviceInfo = deviceInfo
@@ -237,7 +251,8 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 	// peer connection
 	peerConnection, err := cfg.webrtcAPI.NewPeerConnection(config)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 
 	// add peer connection to api
@@ -249,12 +264,10 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 		if state == webrtc.PeerConnectionStateFailed {
 			fmt.Println("Peer connection has failed; exiting")
-			//os.Exit(0)
 		}
 
 		if state == webrtc.PeerConnectionStateClosed {
-			fmt.Println("Peer connection closed")
-			//os.Exit(0)
+			fmt.Println("\r\nPeer connection closed")
 		}
 	})
 
@@ -264,13 +277,8 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 		if d.Label() == "resize" {
 			d.OnOpen(func() {
-				// Create context for data channel
-				ctx, cancel := context.WithCancel(cfg.ctx)
-				cfg.rsCtx = ctx
-
 				d.OnMessage(func(msg webrtc.DataChannelMessage) {
-					cancel()
-					cfg.closeChan<- true
+					close(cfg.closeChan)
 				})
 
 				// start resize watch loop
@@ -286,7 +294,8 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 		ID: ptrUint16(uint16(1)),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 
 	// register shell data channel
@@ -296,12 +305,9 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 		// detach data channel
 		raw, err := shellChannel.Detach()
 		if err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			close(cfg.closeChan)
 		}
-
-		// Create context for data channel
-		//ctx, cancel := context.WithCancel(cfg.ctx)
-		//cfg.shCtx = ctx
 
 		// start read loop
 		go cfg.ReadLoop(raw)
@@ -313,14 +319,16 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 	offer, err := cfg.connections[0].CreateOffer(nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 
 	gatherComplete := webrtc.GatheringCompletePromise(cfg.connections[0])
 
 	err = cfg.connections[0].SetLocalDescription(offer)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 
 	<-gatherComplete
@@ -341,7 +349,8 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 	err = cfg.connections[0].SetRemoteDescription(answer)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return false
 	}
 
 	// block forever
