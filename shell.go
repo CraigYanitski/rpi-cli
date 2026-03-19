@@ -1,12 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	//"time"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -15,8 +14,8 @@ const (
 	messageSize = 8192
 )
 
-func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
-	//time.Sleep(200 * time.Millisecond)
+func (cfg *apiConfig) ReadLoop(d io.Reader) {
+	time.Sleep(100 * time.Millisecond)
 
     // Put local terminal into raw mode
     oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -33,6 +32,7 @@ func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
 		n, err := d.Read(buffer)
 		if err != nil {
 			// fmt.Printf("data channel closed: %s\n", err)
+			cfg.closeChan<- true
 			return
 		}
 		//fmt.Printf("Received: %s", buffer[:n])
@@ -40,18 +40,21 @@ func (cfg *apiConfig) ReadLoop(d io.Reader, cancel context.CancelFunc) {
 	}
 }
 
-func (cfg *apiConfig) WriteLoop(d io.Writer, cancel context.CancelFunc) {
+func (cfg *apiConfig) WriteLoop(d io.Writer) {
 	//time.Sleep(200 * time.Millisecond)
 	buffer := make([]byte, messageSize)
 	for {
 		n, err := os.Stdin.Read(buffer)
 		if err != nil {
+			cfg.closeChan<- true
 			return
 		}
 		if n > 0 {
 			_, err = d.Write(buffer[:n])
 			if err != nil {
-				log.Fatal(err)
+				//log.Fatal(err)
+				cfg.closeChan<- true
+				return
 			}
 		}
 	}

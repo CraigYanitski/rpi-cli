@@ -59,6 +59,7 @@ func (cfg *apiConfig) watchResize(d *webrtc.DataChannel) {
 
 		case <-cfg.rsCtx.Done():
 			fmt.Print("closing resize watch loop\r\n")
+			cfg.closeChan<- true
 			return
 		}
 	}
