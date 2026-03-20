@@ -40,6 +40,15 @@ cd rpi-cli
 The `rpi-cli` binary will be built and moved to `~/.local/bin/`, which should be in your 
 executable path.
 
+Quick Start
+---
+
+`rpi-cli` is simple to use so long as you have a Raspberry Pi account.
+I of course cannot show my login details, but below is an example of use provided you have 
+already logged in using the `rpi-cli` client.
+
+![quick start animation](./quick-start.gif)
+
 Development
 ---
 
