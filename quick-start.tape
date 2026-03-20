@@ -64,10 +64,10 @@ Require rpi-cli
 
 Set Shell "bash"
 Set FontSize 24
-#Set FontFamily "Meslo LGS NF"
+Set FontFamily "MesloLGS NF"
 Set LetterSpacing 0
 Set Width 1600
-Set Height 900
+Set Height 600
 Set Padding 10
 
 # Start rpi-cli
@@ -79,7 +79,7 @@ Enter
 Wait  /❯/
 
 # fastfetch
-Type "fastfetch"
+Type "fastfetch -s OS"
 Sleep 500ms
 Enter
 
