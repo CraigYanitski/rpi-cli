@@ -44,6 +44,7 @@ Quick Start
 ---
 
 `rpi-cli` is simple to use so long as you have a Raspberry Pi account.
+The client will first ask you to sign in if it has not already done so.
 I of course cannot show my login details, but below is an example of use provided you have 
 already logged in using the `rpi-cli` client.
 
