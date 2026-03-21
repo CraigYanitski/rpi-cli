@@ -57,7 +57,7 @@
 #   ScrollUp[@<time>] [number]      Scroll terminal viewport up by rows
 #   ScrollDown[@<time>] [number]    Scroll terminal viewport down by rows
 
-Output quick-start.gif
+Output static/quick-start.gif
 
 Require echo
 Require rpi-cli
