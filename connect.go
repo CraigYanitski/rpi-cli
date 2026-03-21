@@ -260,14 +260,12 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 	// notify of state change
 	cfg.connections[0].OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		// fmt.Printf("Peer connection state change: %s\n", state.String())
-
 		if state == webrtc.PeerConnectionStateFailed {
-			fmt.Println("Peer connection has failed; exiting")
+			log.Println("Peer connection has failed; exiting")
 		}
 
 		if state == webrtc.PeerConnectionStateClosed {
-			fmt.Println("\r\nPeer connection closed")
+			log.Println("Peer connection closed")
 		}
 	})
 

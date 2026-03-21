@@ -156,7 +156,7 @@ func main() {
 	if err = jar.Save(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("\nCookies saved to %s\n", jarOptions.Filename)
+	fmt.Printf("Cookies saved to %s\n", jarOptions.Filename)
 }
 
 func setHeader(r *http.Request, contentType, origin, referer string) {
