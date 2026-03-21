@@ -22,19 +22,6 @@ var (
 	failStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#cc0101"))
 )
 
-type SignIn struct {
-	AuthToken  string  `json:"authenticity_token"`
-	Email      string  `json:"email"`
-	Password   string  `json:"password"`
-	Commit     string  `json:"commit"`
-}
-
-type Verify struct {
-	AuthToken  string  `json:"authenticity_token"`
-	OTP        string  `json:"otp"`
-	Commit     string  `json:"commit"`
-}
-
 type apiConfig struct {
 	spinner      *spinner.Spinner
 	client       *http.Client

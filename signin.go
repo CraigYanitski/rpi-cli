@@ -19,6 +19,19 @@ import (
 	"golang.org/x/term"
 )
 
+type SignIn struct {
+	AuthToken  string  `json:"authenticity_token"`
+	Email      string  `json:"email"`
+	Password   string  `json:"password"`
+	Commit     string  `json:"commit"`
+}
+
+type Verify struct {
+	AuthToken  string  `json:"authenticity_token"`
+	OTP        string  `json:"otp"`
+	Commit     string  `json:"commit"`
+}
+
 func (cfg *apiConfig) rpiSignIn() bool {
 	// check if session_id cookie exists (this is long-lived and used to bypass the signin step)
 	idCookies, err := utils.GetCookieNames(cfg.client.Jar, "https://id.raspberrypi.com")
