@@ -3,9 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,25 +33,34 @@ type Verify struct {
 	Commit     string  `json:"commit"`
 }
 
-func (cfg *apiConfig) rpiSignIn() bool {
+func (cfg *apiConfig) rpiSignIn() error {
+	// check if values were given in CLI command
+	email := flag.String("email", "", "raspberry pi connect account email")
+	pw := flag.String("password", "", "raspberry pi connect account password")
+	flag.Parse()
+
+	fmt.Println("args", *email, *pw)
+
 	// check if session_id cookie exists (this is long-lived and used to bypass the signin step)
 	idCookies, err := utils.GetCookieNames(cfg.client.Jar, "https://id.raspberrypi.com")
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 	isSignedIn := slices.Contains(idCookies, "session_id")
 	if isSignedIn {
-		return true
+		return nil
 	}
 
-	var input = []byte{}
 	var rpiEmail = ""
 	var rpiPW = ""
+	var input = []byte{}
 
 	homeDir, _ := os.UserHomeDir()
 	_, err = os.Stat(homeDir + "/.rpi-cli/.env")
-	if err != nil {
+	if (*email != "") && (*pw != "") {
+		rpiEmail = *email
+		rpiPW = *pw
+	} else if err != nil {
 		cfg.spinner.Clear()
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Email: ")
@@ -64,7 +74,7 @@ func (cfg *apiConfig) rpiSignIn() bool {
 	} else {
 		err = godotenv.Load(homeDir + "/.rpi-cli/.env")
 		if err != nil {
-			log.Print("failed to load .env file")
+			return errors.New("failed to load .env file")
 		}
 
 		rpiEmail = os.Getenv("RPI_EMAIL")
@@ -75,22 +85,18 @@ func (cfg *apiConfig) rpiSignIn() bool {
 	// get sign-in information, grep authority and hidden to make sign-in obj
 	r, err := http.NewRequest("GET", "https://id.raspberrypi.com/sign-in", nil)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	resp, err := cfg.client.Do(r)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	} else if resp.StatusCode >= 400 {
-		log.Printf("Failed to get sign-in information: received %s", resp.Status)
-		return false
+		return fmt.Errorf("Failed to get sign-in information: received %s", resp.Status)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 	resp.Body.Close()
 
@@ -116,8 +122,7 @@ func (cfg *apiConfig) rpiSignIn() bool {
 		bytes.NewBuffer([]byte(signInData)),
 	)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 	setHeader(
 		r, 
@@ -128,16 +133,13 @@ func (cfg *apiConfig) rpiSignIn() bool {
 
 	resp, err = cfg.client.Do(r)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	} else if resp.StatusCode == 400 || resp.StatusCode > 401 {
-		log.Printf("Failed to sign into rpi account: received %s", resp.Status)
-		return false
+		return fmt.Errorf("Failed to sign into rpi account: received %s", resp.Status)
 	}
 	body, err = httpdecompressor.ReadAll(resp)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	// wait for two-factor authentification if t is enabled
@@ -169,8 +171,7 @@ func (cfg *apiConfig) rpiSignIn() bool {
 			bytes.NewBuffer([]byte(verifyData)),
 		)
 		if err != nil {
-			log.Print(err)
-			return false
+			return err
 		}
 		setHeader(
 			r,
@@ -181,12 +182,10 @@ func (cfg *apiConfig) rpiSignIn() bool {
 
 		resp, err = cfg.client.Do(r)
 		if err != nil {
-			log.Print(err)
-			return false
+			return err
 		} else if resp.StatusCode >= 400 {
-			log.Printf("Failed to verify the rpi account: received %s", resp.Status)
-			return false
+			return fmt.Errorf("Failed to verify the rpi account: received %s", resp.Status)
 		}
 	}
-	return true
+	return nil
 }

@@ -93,7 +93,7 @@ func ptrUint16(val uint16) *uint16 {
 	return &val
 }
 
-func (cfg *apiConfig) rpiConnect() bool {
+func (cfg *apiConfig) rpiConnect() error {
 	// find way to list devices at connect.raspberrypi.com/devices
 	r, err := http.NewRequest(
 		"GET",
@@ -101,23 +101,19 @@ func (cfg *apiConfig) rpiConnect() bool {
 		nil,
 	)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	resp, err := cfg.client.Do(r)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	} else if resp.StatusCode >= 400 {
-		log.Printf("Failed to sign into rpi account: received %s", resp.Status)
-		return false
+		return fmt.Errorf("Failed to sign into rpi account: received %s", resp.Status)
 	}
 
 	body, err := httpdecompressor.ReadAll(resp)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 	resp.Body.Close()
 
@@ -132,8 +128,7 @@ func (cfg *apiConfig) rpiConnect() bool {
 		bytes.NewBuffer([]byte(authData)),
 	)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 	setHeader(
 		r,
@@ -144,16 +139,14 @@ func (cfg *apiConfig) rpiConnect() bool {
 
 	resp, err = cfg.client.Do(r)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	} else if resp.StatusCode >= 400 {
-		log.Printf("Failed to authenticate for rpi connect: received %s", resp.Status)
-		return false
+		return fmt.Errorf("Failed to authenticate for rpi connect: received %s", resp.Status)
 	}
 
 	body, err = httpdecompressor.ReadAll(resp)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	resp.Body.Close()
 
@@ -165,33 +158,29 @@ func (cfg *apiConfig) rpiConnect() bool {
 		cfg.devices = append(cfg.devices, []string{match[1], match[2]})
 	}
 
-	return true
+	return nil
 }
 
-func (cfg *apiConfig) connectDevice(deviceURL string) bool {
+func (cfg *apiConfig) connectDevice(deviceURL string) error {
 	r, err := http.NewRequest(
 		"GET",
 		deviceURL,
 		nil,
 	)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	resp, err := cfg.client.Do(r)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	} else if resp.StatusCode >= 400 {
-		log.Printf("Failed to connect to device terminal: received %s", resp.Status)
-		return false
+		return fmt.Errorf("Failed to connect to device terminal: received %s", resp.Status)
 	}
 
 	body, err := httpdecompressor.ReadAll(resp)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 	resp.Body.Close()
 
@@ -210,8 +199,7 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 		deviceData := &DeviceData{}
 		if err = json.Unmarshal([]byte(d), deviceData); err != nil {
-			log.Print(err)
-			return false
+			return err
 		}
 
 		deviceInfo.device = *deviceData
@@ -219,8 +207,7 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 		iceConfig := &ICEConfig{}
 		if err = json.Unmarshal([]byte(ic), iceConfig); err != nil {
-			log.Print(err)
-			return false
+			return err
 		}
 
 		deviceInfo.iceConfig = *iceConfig
@@ -230,16 +217,14 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 		//fmt.Printf("  device: %s\n", deviceInfo.device)
 		//fmt.Printf("  ice-config: %s\n", deviceInfo.iceConfig)
 	} else {
-		log.Print("Unable to collect device information")
-		return false
+		return fmt.Errorf("Unable to collect device information")
 	}
 
 	sessionToken := getSessionToken(string(body))
 	if sessionToken != "" {
 		deviceInfo.csrfToken = sessionToken
 	} else {
-		log.Print("Unable to collect CSRF token for session")
-		return false
+		return fmt.Errorf("Unable to collect CSRF token for session")
 	}
 
 	cfg.deviceInfo = deviceInfo
@@ -251,8 +236,7 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 	// peer connection
 	peerConnection, err := cfg.webrtcAPI.NewPeerConnection(config)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	// add peer connection to api
@@ -271,8 +255,6 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 	// register data channel handlers
 	cfg.connections[0].OnDataChannel(func(d *webrtc.DataChannel) {
-		// fmt.Printf("Data channel \"%s\" (id: %d)\n", d.Label(), *d.ID())
-
 		if d.Label() == "resize" {
 			d.OnOpen(func() {
 				d.OnMessage(func(msg webrtc.DataChannelMessage) {
@@ -292,8 +274,7 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 		ID: ptrUint16(uint16(1)),
 	})
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	// register shell data channel
@@ -317,16 +298,14 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 	offer, err := cfg.connections[0].CreateOffer(nil)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	gatherComplete := webrtc.GatheringCompletePromise(cfg.connections[0])
 
 	err = cfg.connections[0].SetLocalDescription(offer)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	<-gatherComplete
@@ -347,12 +326,11 @@ func (cfg *apiConfig) connectDevice(deviceURL string) bool {
 
 	err = cfg.connections[0].SetRemoteDescription(answer)
 	if err != nil {
-		log.Print(err)
-		return false
+		return err
 	}
 
 	// block forever
 	//select{}
-	return true
+	return nil
 }
 

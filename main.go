@@ -95,10 +95,10 @@ func main() {
 	s.Set("Signing into RPI account")
 
 	// sign into rpi id (required once for cookies)
-	ok := api.rpiSignIn()
-	if !ok {
+	err = api.rpiSignIn()
+	if err != nil {
 		s.Fail()
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	// update spinner progress
@@ -106,10 +106,10 @@ func main() {
 	s.Set("Connecting to signalling service")
 
 	// connect to rpi device
-	ok = api.rpiConnect()
-	if !ok {
+	err = api.rpiConnect()
+	if err != nil {
 		s.Fail()
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	// select device
@@ -120,10 +120,10 @@ func main() {
 	s.Set(fmt.Sprintf("Waiting for response from %s...", deviceName))
 
 	// negotiate peer-to-peer connection
-	ok = api.connectDevice(deviceURL)
-	if !ok {
+	err = api.connectDevice(deviceURL)
+	if err != nil {
 		s.Fail()
-		os.Exit(1)
+		log.Fatal(err)
 	}
 	defer func() {
 		if err := api.connections[0].Close(); err != nil {
