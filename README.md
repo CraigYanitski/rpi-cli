@@ -48,7 +48,7 @@ The client will first ask you to sign in if it has not already done so.
 I of course cannot show my login details, but below is an example of use provided you have 
 already logged in using the `rpi-cli` client.
 
-![quick start animation](./quick-start.gif)
+![quick start animation](./static/quick-start.gif)
 
 Development
 ---
