@@ -7,12 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-
-	//"net/http/httputil"
 	"time"
 
+	"github.com/CraigYanitski/rpi-cli/internal/spinner"
 	"github.com/CraigYanitski/rpi-cli/internal/utils"
-	"github.com/briandowns/spinner"
 	"github.com/charmbracelet/lipgloss"
 	cookiejar "github.com/juju/persistent-cookiejar"
 	"github.com/pion/webrtc/v4"
@@ -20,8 +18,8 @@ import (
 )
 
 var (
-	completedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#1ec001"))
-	failedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#cc0101"))
+	passStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#1ec001"))
+	failStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#cc0101"))
 )
 
 type SignIn struct {
@@ -38,14 +36,15 @@ type Verify struct {
 }
 
 type apiConfig struct {
-	closeChan    chan any
+	spinner      *spinner.Spinner
 	client       *http.Client
 	cookiejar    *cookiejar.Jar
-	devices      [][]string
 	webrtcAPI    *webrtc.API
-	connections  []*webrtc.PeerConnection
 	deviceInfo   *DeviceInfo
+	connections  []*webrtc.PeerConnection
+	closeChan    chan any
 	sdpChan      chan string
+	devices      [][]string
 }
 
 func main() {
@@ -89,63 +88,54 @@ func main() {
 	setter := webrtc.SettingEngine{}
 	setter.DetachDataChannels()
 
+	// start spinner notification while connecting to peer
+	s := spinner.NewSpinner(11, 100 * time.Millisecond, passStyle, failStyle)
+
 	// initialise api config
-	api := apiConfig{
-		closeChan: make(chan any),
-		client:    client,
-		cookiejar: jar,
-		webrtcAPI: webrtc.NewAPI(webrtc.WithSettingEngine(setter)),
+	api := &apiConfig{
+		spinner:     s,
+		client:      client,
+		cookiejar:   jar,
+		webrtcAPI:   webrtc.NewAPI(webrtc.WithSettingEngine(setter)),
 		connections: []*webrtc.PeerConnection{},
+		closeChan: make(chan any),
 		sdpChan:   make(chan string),
 	}
 
 	// ---- CONNECT TO SIGNALLING SERVER ----
 
-	// start spinner notification while connecting to peer
-	s := spinner.New(spinner.CharSets[11], 100 * time.Millisecond)
-	s.Reverse()
-	s.Color("magenta", "bold")
-	s.Suffix = " Signing into RPI account"
+	// set spinner msg
+	s.Set("Signing into RPI account")
 
 	// sign into rpi id (required once for cookies)
 	ok := api.rpiSignIn()
 	if !ok {
-		s.Stop()
-		failMsg := failedStyle.Render("✗ Unable to sign into Raspberry Pi ID")
-		fmt.Println(failMsg)
+		s.Fail()
 		os.Exit(1)
 	}
 
 	// update spinner progress
-	s.Stop()
-	fmt.Println(completedStyle.Render("✓"+s.Suffix))
-	s.Suffix = " Connecting to signalling service"
-	s.Start()
+	s.Pass()
+	s.Set("Connecting to signalling service")
 
 	// connect to rpi device
 	ok = api.rpiConnect()
 	if !ok {
-		s.Stop()
-		failMsg := failedStyle.Render("✗ Unable to obtain RPI devices")
-		fmt.Println(failMsg)
+		s.Fail()
 		os.Exit(1)
 	}
 
 	// select device
-	s.Stop()  // stop spinner for printing
-	fmt.Println(completedStyle.Render("✓" + s.Suffix))
+	s.Pass()  // stop spinner for printing
 	deviceName, deviceURL := utils.GetDeviceURL(api.devices)
 
 	// update spinner description
-	s.Suffix = fmt.Sprintf(" Waiting for response from %s...", deviceName)
-	s.Start()
+	s.Set(fmt.Sprintf("Waiting for response from %s...", deviceName))
 
 	// negotiate peer-to-peer connection
 	ok = api.connectDevice(deviceURL)
 	if !ok {
-		s.Stop()
-		failMsg := failedStyle.Render(fmt.Sprintf("✗ Unable to connect to %s", deviceName))
-		fmt.Println(failMsg)
+		s.Fail()
 		os.Exit(1)
 	}
 	defer func() {
@@ -155,8 +145,7 @@ func main() {
 	}()
 
 	// stop spinner
-	s.Stop()
-	fmt.Println(completedStyle.Render("✓" + s.Suffix))
+	s.Pass()
 
 	// race to see which context closes first
 	<-api.closeChan
