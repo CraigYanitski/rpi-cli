@@ -50,6 +50,17 @@ already logged in using the `rpi-cli` client.
 
 ![quick start animation](./static/quick-start.gif)
 
+Rather than waiting for the application to prompt you for your email and password, 
+you may alternatively login by placing a `.env` file in `~/.rpi-cli/` with your email and 
+password in the `RPI_EMAIL` and `RPI_PW` variables, respectively.
+Or you can place them as the CLI arguments `-email` and `-password`.
+Just note that these login methods cannot be mixed, so your email and password must be 
+entered using just one of these methods.
+
+In any case, your cookies will be saved in the directory `~/.rpi-cli/`, so you only need 
+to login once.
+A future commit might make the saving of cookies optional for increased security.
+
 Development
 ---
 
@@ -59,5 +70,15 @@ responses, but I have since moved everything into a Golang client.
 Now the client is functional, but there are many quality of life updates to be made.
 Please feel free to fork this repository and contribute to its development.
 
-Please also feel free suggest improvements that should be made.
+```bash
+# Clone
+git clone https://github.com/CraigYanitski/rpi-cli
+cd rpi-cli
+
+# Make edits
+go build .
+```
+
+Please also feel free to [suggest](https://github.com/CraigYanitski/rpi-cli/issues/new) 
+improvements that should be made.
 
