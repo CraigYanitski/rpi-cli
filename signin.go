@@ -39,7 +39,7 @@ func (cfg *apiConfig) rpiSignIn() error {
 	pw := flag.String("password", "", "raspberry pi connect account password")
 	flag.Parse()
 
-	fmt.Println("args", *email, *pw)
+	//fmt.Println("args", *email, *pw)
 
 	// check if session_id cookie exists (this is long-lived and used to bypass the signin step)
 	idCookies, err := utils.GetCookieNames(cfg.client.Jar, "https://id.raspberrypi.com")
